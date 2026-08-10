@@ -1,6 +1,8 @@
 """
-Amplitude-Variable Trial — CoP Controlled (two force plates)
-Fullscreen, CSV logging.
+Amplitude-Variable Trial
+-CoP Controlled (two force plates)
+-Fullscreen
+-CSV logging.
 
 What this trial does:
   The path is a sine wave at a FIXED frequency whose AMPLITUDE varies from
@@ -11,8 +13,8 @@ What this trial does:
 
   - Fixed frequency (person-specific; set FIXED_FREQUENCY_HZ below)
   - Amplitude changes once per cycle, drawn from fgn_sim(H, sd)
-  - 5 second calibration before the trial begins
-  - Trial starts only after calibration; ball is a plain circle
+  - 10 second calibration before the trial begins
+  - Trial starts only after calibration
 """
 
 import pygame
@@ -28,9 +30,9 @@ import numpy as np
 import qtm
 
 
-# =====================================================================
+
 #  TRIAL SETTINGS
-# =====================================================================
+
 TRIAL_DURATION_SEC = 300        # 5 minutes
 
 # Fixed frequency for this trial. THIS IS PERSON-SPECIFIC - set based on
@@ -50,9 +52,8 @@ BASE_AMP_MIN = 50
 BASE_AMP_MAX = 300
 
 
-# =====================================================================
 #  FORCE PLATE SETTINGS (two plates, combined position-based CoP)
-# =====================================================================
+
 QTM_IP = "127.0.0.1"
 QTM_PLATE_IDS = [3, 5]   # 3 = left foot plate, 5 = right foot plate
 
@@ -74,9 +75,9 @@ COP_RANGE_MM = 200.0
 # mediolateral axis, raw x_a = true anteroposterior axis.
 
 
-# =====================================================================
+
 #  DISPLAY (base values at reference 600x700, scaled at runtime)
-# =====================================================================
+
 FPS = 60
 BG_COLOR = (15, 15, 30)
 REF_W, REF_H = 600, 700
@@ -92,10 +93,8 @@ LINE_COLOR = (180, 150, 40)     # dark yellow path
 BALL_COLOR = (210, 60, 60)      # plain red ball (no image needed)
 GRID_COLOR = (22, 22, 40)
 
-
-# =====================================================================
 #  fGn GENERATION - Davies-Harte method, ported directly from fgn_sim.m
-# =====================================================================
+
 def fgn_sim(n, H, sd=1.0, mu=0.0, seed=None):
     """
     Python port of fgn_sim.m (Davies-Harte method). Generates a fractional
@@ -193,9 +192,8 @@ class CycleAmplitudeMap:
         return self.amp_min + v * (self.amp_max - self.amp_min)
 
 
-# =====================================================================
 #  TWO-PLATE COP INPUT (combined_cop_shared, position-based)
-# =====================================================================
+
 class QTMTwoPlateCopInput:
     """Streams CoP from two force plates and computes combined_cop_shared:
     a force-weighted average of each foot's ML position, converted to
@@ -378,9 +376,9 @@ class QTMTwoPlateCopInput:
             print("QTM disconnected")
 
 
-# =====================================================================
+
 #  MAIN
-# =====================================================================
+
 def main():
     pygame.init()
 
