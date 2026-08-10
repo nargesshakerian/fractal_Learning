@@ -29,15 +29,31 @@ from datetime import datetime
 import numpy as np
 import qtm
 
+# =====================================================================
 #  TASK SETTINGS
-
+# =====================================================================
 CALIBRATION_SECONDS = 10.0
-RECORD_SECONDS = 30.0
+
+# Trial stops after this many COMPLETE cycles (detected via zero-crossing
+# of the CoP signal), at the person's own natural pace - NOT a fixed
+# time. MAX_RECORD_SECONDS is a safety cap in case the person moves too
+# slowly (or not at all) to reach the target cycle count.
+TARGET_CYCLES = 10
+MAX_RECORD_SECONDS = 90.0
+
+# Minimum excursion (mm) the signal must exceed before a zero-crossing
+# is counted. Without this, small noise wiggles near the center line
+# (e.g. while the person is briefly near-still around center) get
+# miscounted as tiny "cycles" with near-zero peaks, which would
+# corrupt the mean peak amplitude. Acts as a hysteresis dead-zone: the
+# sign only updates once the signal passes +/- this threshold.
+MIN_CROSSING_THRESHOLD_MM = 15.0
+
 EDGE_MARGIN_PX = 20
 
-
+# =====================================================================
 #  FORCE PLATE SETTINGS
-
+# =====================================================================
 QTM_IP = "127.0.0.1"
 QTM_PLATE_IDS = [3, 5]   # 3 = left foot plate, 5 = right foot plate
 
@@ -53,9 +69,7 @@ PLATE_OFFSET_MM = {
 # AXIS NOTE (confirmed July 2026 in QTM Project): raw y_a = true
 # mediolateral axis, raw x_a = true anteroposterior axis.
 
-
-#  DISPLAY
-
+# Ball display
 FPS = 60
 BG_COLOR = (20, 20, 30)
 BALL_RADIUS = 45
@@ -270,6 +284,7 @@ def main():
     log_writer = csv.writer(log_file)
     log_writer.writerow([
         "time", "frame", "ball_x", "combined_cop_shared_mm", "display_range_mm",
+        "cycle_number",
         "fz_left", "ml_left", "ap_left",
         "fz_right", "ml_right", "ap_right",
     ])
@@ -277,7 +292,7 @@ def main():
     instruction_lines = [
         "Stand on the two force plates, feet shoulder-width apart.",
         "Once the trial starts, freely shift your weight left and right",
-        "at whatever speed feels comfortable to you.",
+        f"at whatever speed feels comfortable to you, for {TARGET_CYCLES} cycles.",
         "",
         "Press SPACE when you are ready to begin.",
     ]
@@ -292,6 +307,19 @@ def main():
     # largest excursion actually reached (never shrinks mid-trial, so
     # the scale doesn't jump around distractingly)
     display_range_mm = INITIAL_DISPLAY_RANGE_MM
+
+    # --- cycle detection state (zero-crossing based) ---
+    # A cycle is counted as two consecutive zero-crossings of the SAME
+    # sign transition (e.g. neg->pos, then the next neg->pos), meaning
+    # the person went out to one side, back through center, out to the
+    # other side, and back through center again - one full left-right
+    # oscillation, at whatever speed/amplitude they naturally choose.
+    last_cop_sign = None          # sign of cop_mm on the previous frame
+    zero_crossings = 0            # total zero-crossings seen so far
+    cycle_number = 0              # current cycle index (0 = before first crossing)
+    current_cycle_peak_pos = 0.0  # largest positive cop_mm seen in the CURRENT cycle
+    current_cycle_peak_neg = 0.0  # largest negative cop_mm seen in the CURRENT cycle (most negative)
+    cycle_peaks = []              # list of (cycle_number, peak_positive_mm, peak_negative_mm) for COMPLETED cycles
 
     try:
         running = True
@@ -333,9 +361,45 @@ def main():
                     max_extent_px = (WIDTH / 2) - EDGE_MARGIN_PX - BALL_RADIUS
                     ball_x = center_x + fraction * max_extent_px
 
-                if trial_elapsed >= RECORD_SECONDS:
+                    # --- cycle detection via zero-crossing, with a
+                    # hysteresis dead-zone around center so small noise
+                    # wiggles near zero aren't miscounted as cycles ---
+                    if cop_mm > MIN_CROSSING_THRESHOLD_MM:
+                        current_sign = 1
+                    elif cop_mm < -MIN_CROSSING_THRESHOLD_MM:
+                        current_sign = -1
+                    else:
+                        current_sign = last_cop_sign   # stay in previous state inside the dead-zone
+
+                    if current_sign is not None:
+                        # track the peak (furthest excursion) within the current cycle
+                        if cop_mm > current_cycle_peak_pos:
+                            current_cycle_peak_pos = cop_mm
+                        if cop_mm < current_cycle_peak_neg:
+                            current_cycle_peak_neg = cop_mm
+
+                        if last_cop_sign is not None and current_sign != last_cop_sign:
+                            zero_crossings += 1
+                            # two crossings = one full cycle (out-and-back on both sides)
+                            if zero_crossings % 2 == 0:
+                                cycle_number += 1
+                                cycle_peaks.append((cycle_number, current_cycle_peak_pos, current_cycle_peak_neg))
+                                print(f"  Cycle {cycle_number}/{TARGET_CYCLES} complete: "
+                                      f"peak_right={current_cycle_peak_pos:.1f}mm  peak_left={current_cycle_peak_neg:.1f}mm")
+                                current_cycle_peak_pos = 0.0
+                                current_cycle_peak_neg = 0.0
+                        last_cop_sign = current_sign
+
+                # stop after reaching the target cycle count, at the
+                # person's own pace - MAX_RECORD_SECONDS is only a
+                # safety net in case they move too slowly to finish
+                if cycle_number >= TARGET_CYCLES:
                     trial_state = "done"
-                    print(f"Trial complete! {RECORD_SECONDS:.0f}s elapsed.")
+                    print(f"Trial complete! {TARGET_CYCLES} cycles reached in {trial_elapsed:.1f}s.")
+                elif trial_elapsed >= MAX_RECORD_SECONDS:
+                    trial_state = "done"
+                    print(f"Trial stopped: safety time limit ({MAX_RECORD_SECONDS:.0f}s) reached "
+                          f"with only {cycle_number}/{TARGET_CYCLES} cycles completed.")
 
             # --- logging (only during running) ---
             if trial_state == "running":
@@ -350,6 +414,7 @@ def main():
                     round(ball_x, 2),
                     round(cop_mm, 2) if cop_mm is not None else "",
                     round(display_range_mm, 2),
+                    cycle_number,
                     round(raw_snapshot[left_pid]["fz"], 2),
                     round(raw_snapshot[left_pid]["ml"], 2) if raw_snapshot[left_pid]["ml"] is not None else "",
                     round(raw_snapshot[left_pid]["ap"], 2) if raw_snapshot[left_pid]["ap"] is not None else "",
@@ -395,6 +460,23 @@ def main():
 
     print(f"\nDone. {frame_count} frames recorded to {csv_path}")
     print(f"Final display range reached: {display_range_mm:.1f}mm")
+    print(f"Cycles completed: {cycle_number}/{TARGET_CYCLES}")
+
+    if cycle_peaks:
+        print("\nPer-cycle peaks (mm):")
+        print(f"  {'Cycle':>6} {'Peak Right':>12} {'Peak Left':>12}")
+        for cyc, peak_pos, peak_neg in cycle_peaks:
+            print(f"  {cyc:6d} {peak_pos:12.1f} {peak_neg:12.1f}")
+
+        mean_peak_pos = sum(p[1] for p in cycle_peaks) / len(cycle_peaks)
+        mean_peak_neg = sum(p[2] for p in cycle_peaks) / len(cycle_peaks)
+        print(f"\n  Mean peak right: {mean_peak_pos:.1f}mm")
+        print(f"  Mean peak left:  {mean_peak_neg:.1f}mm")
+        print(f"  (these per-cycle peaks are also in the CSV via the "
+              f"cycle_number column, for later analysis)")
+    else:
+        print("\nNo complete cycles were detected during this trial.")
+
     sys.exit()
 
 
