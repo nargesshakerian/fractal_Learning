@@ -32,7 +32,7 @@ import qtm
 # =====================================================================
 #  TASK SETTINGS
 # =====================================================================
-CALIBRATION_SECONDS = 10.0
+CALIBRATION_SECONDS = 5.0
 
 # Trial stops after this many COMPLETE cycles (detected via zero-crossing
 # of the CoP signal), at the person's own natural pace - NOT a fixed
@@ -69,11 +69,13 @@ PLATE_OFFSET_MM = {
 # AXIS NOTE (confirmed July 2026 in QTM Project): raw y_a = true
 # mediolateral axis, raw x_a = true anteroposterior axis.
 
-# Ball display
+# =====================================================================
+#  DISPLAY
+# =====================================================================
 FPS = 60
 BG_COLOR = (20, 20, 30)
-BALL_RADIUS = 45
-CENTER_DOT_RADIUS = 0
+BALL_RADIUS = 32
+CENTER_DOT_RADIUS = 6
 BALL_COLOR = (190, 190, 190)     # soft gray, matches the main amplitude task
 CENTER_DOT_COLOR = (0, 0, 0)
 CENTER_LINE_COLOR = (60, 60, 70)
@@ -302,6 +304,7 @@ def main():
     trial_elapsed = 0.0
     frame_count = 0
     ball_x = center_x
+    cop_mm = None   # current frame's centered CoP (mm) - computed once per frame in "running"
 
     # auto-scaling display range: starts small, grows to fit the
     # largest excursion actually reached (never shrinks mid-trial, so
@@ -330,8 +333,13 @@ def main():
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    elif event.key == pygame.K_SPACE and trial_state == "instructions":
-                        trial_state = "waiting"
+                    elif event.key == pygame.K_SPACE:
+                        if trial_state == "instructions":
+                            trial_state = "waiting"
+                        elif trial_state == "ready":
+                            trial_state = "running"
+                            trial_start_time = time.perf_counter()
+                            print("Trial started!")
 
             if trial_state == "instructions":
                 pass
@@ -342,9 +350,11 @@ def main():
                     trial_state = "calibrating"
                     print(f"Plate loaded! Calibrating for {CALIBRATION_SECONDS:.1f}s - stand still...")
                     cop.calibrate(CALIBRATION_SECONDS)
-                    print("Calibration done. Trial starting!")
-                    trial_state = "running"
-                    trial_start_time = time.perf_counter()
+                    print("Calibration done. Press SPACE when you are ready to start the trial.")
+                    trial_state = "ready"
+
+            elif trial_state == "ready":
+                ball_x = center_x   # ball stays centered while waiting for the person to confirm
 
             elif trial_state == "running":
                 trial_elapsed = time.perf_counter() - trial_start_time
@@ -405,7 +415,12 @@ def main():
             if trial_state == "running":
                 raw_snapshot = cop.get_raw_snapshot()
                 left_pid, right_pid = QTM_PLATE_IDS[0], QTM_PLATE_IDS[1]
-                cop_mm = cop.get_centered_cop_mm()
+                # NOTE: reuse the SAME cop_mm computed above for ball_x -
+                # calling get_centered_cop_mm() again here would apply the
+                # EMA smoothing a second time in the same frame (since it
+                # has a stateful side effect), causing the logged value
+                # and the displayed ball position to drift apart, and
+                # making the ball's motion visibly jerky/inconsistent.
 
                 frame_count += 1
                 log_writer.writerow([
@@ -445,9 +460,19 @@ def main():
                 elif trial_state == "calibrating":
                     msg = font_big.render("Calibrating - stand still...", True, (255, 220, 100))
                     screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
+                elif trial_state == "ready":
+                    msg = font_big.render("Calibration complete!", True, (100, 255, 100))
+                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
+                    msg2 = font_instructions.render("Press SPACE when you are ready to start", True, (220, 220, 220))
+                    screen.blit(msg2, (WIDTH // 2 - msg2.get_width() // 2, HEIGHT // 2 - 40))
                 elif trial_state == "done":
                     msg = font_big.render("Trial Complete!", True, (100, 255, 100))
                     screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
+
+                if trial_state == "running":
+                    # simple, unobtrusive cycle counter in the corner
+                    cycle_msg = font.render(f"Cycle {cycle_number} / {TARGET_CYCLES}", True, (120, 120, 140))
+                    screen.blit(cycle_msg, (20, 20))
 
             pygame.display.flip()
             clock.tick(FPS)
