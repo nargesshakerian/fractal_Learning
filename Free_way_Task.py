@@ -29,16 +29,15 @@ from datetime import datetime
 import numpy as np
 import qtm
 
-# =====================================================================
 #  TASK SETTINGS
-# =====================================================================
-CALIBRATION_SECONDS = 5.0
+
+CALIBRATION_SECONDS = 10.0
 RECORD_SECONDS = 30.0
 EDGE_MARGIN_PX = 20
 
-# =====================================================================
+
 #  FORCE PLATE SETTINGS
-# =====================================================================
+
 QTM_IP = "127.0.0.1"
 QTM_PLATE_IDS = [3, 5]   # 3 = left foot plate, 5 = right foot plate
 
@@ -54,13 +53,13 @@ PLATE_OFFSET_MM = {
 # AXIS NOTE (confirmed July 2026 in QTM Project): raw y_a = true
 # mediolateral axis, raw x_a = true anteroposterior axis.
 
-# =====================================================================
+
 #  DISPLAY
-# =====================================================================
+
 FPS = 60
 BG_COLOR = (20, 20, 30)
-BALL_RADIUS = 32
-CENTER_DOT_RADIUS = 6
+BALL_RADIUS = 45
+CENTER_DOT_RADIUS = 0
 BALL_COLOR = (190, 190, 190)     # soft gray, matches the main amplitude task
 CENTER_DOT_COLOR = (0, 0, 0)
 CENTER_LINE_COLOR = (60, 60, 70)
