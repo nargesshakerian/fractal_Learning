@@ -29,10 +29,10 @@ from datetime import datetime
 import numpy as np
 import qtm
 
-# =====================================================================
+
 #  TASK SETTINGS
-# =====================================================================
-CALIBRATION_SECONDS = 5.0
+
+CALIBRATION_SECONDS = 10.0
 
 # Trial stops after this many COMPLETE cycles (detected via zero-crossing
 # of the CoP signal), at the person's own natural pace - NOT a fixed
@@ -47,7 +47,7 @@ MAX_RECORD_SECONDS = 90.0
 # miscounted as tiny "cycles" with near-zero peaks, which would
 # corrupt the mean peak amplitude. Acts as a hysteresis dead-zone: the
 # sign only updates once the signal passes +/- this threshold.
-MIN_CROSSING_THRESHOLD_MM = 15.0
+MIN_CROSSING_THRESHOLD_MM = 20.0
 
 EDGE_MARGIN_PX = 20
 
@@ -74,8 +74,8 @@ PLATE_OFFSET_MM = {
 # =====================================================================
 FPS = 60
 BG_COLOR = (0, 0, 0)             # pure black background
-BALL_RADIUS = 32
-CENTER_DOT_RADIUS = 6
+BALL_RADIUS = 50
+CENTER_DOT_RADIUS = 0
 BALL_COLOR = (190, 190, 190)     # soft gray, matches the main amplitude task
 CENTER_DOT_COLOR = (0, 0, 0)
 CENTER_LINE_COLOR = (60, 60, 70)
