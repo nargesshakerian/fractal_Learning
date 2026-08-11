@@ -73,7 +73,7 @@ PLATE_OFFSET_MM = {
 #  DISPLAY
 # =====================================================================
 FPS = 60
-BG_COLOR = (20, 20, 30)
+BG_COLOR = (0, 0, 0)             # pure black background
 BALL_RADIUS = 32
 CENTER_DOT_RADIUS = 6
 BALL_COLOR = (190, 190, 190)     # soft gray, matches the main amplitude task
@@ -272,9 +272,9 @@ def main():
     center_x = WIDTH // 2
     ball_y = HEIGHT // 2
 
-    font = pygame.font.SysFont("timesnewroman", 28)
-    font_big = pygame.font.SysFont("timesnewroman", 40, bold=True)
-    font_instructions = pygame.font.SysFont("timesnewroman", 32)
+    font = pygame.font.SysFont("timesnewroman", 32)
+    font_big = pygame.font.SysFont("timesnewroman", 52, bold=True)
+    font_instructions = pygame.font.SysFont("timesnewroman", 40)
 
     cop = QTMTwoPlateCopInput(QTM_IP, QTM_PLATE_IDS, FZ_THRESHOLD_N, COP_SMOOTH_ALPHA, PLATE_OFFSET_MM)
     cop.start(WIDTH)
@@ -441,31 +441,40 @@ def main():
             # --- draw ---
             screen.fill(BG_COLOR)
 
-            if trial_state == "instructions":
-                y_start = HEIGHT // 2 - 120
-                line_spacing = 44
-                for i, line in enumerate(instruction_lines):
-                    if not line:
-                        continue
-                    msg = font_instructions.render(line, True, (220, 220, 220))
-                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, y_start + i * line_spacing))
+            if trial_state in ("instructions", "waiting", "calibrating", "ready"):
+                # Pre-game screens: pure black background, text only - no
+                # ball, no center line, so the person isn't looking at
+                # the task display before the trial actually starts.
+                if trial_state == "instructions":
+                    y_start = HEIGHT // 2 - 140
+                    line_spacing = 52
+                    for i, line in enumerate(instruction_lines):
+                        if not line:
+                            continue
+                        msg = font_instructions.render(line, True, (220, 220, 220))
+                        screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, y_start + i * line_spacing))
+
+                elif trial_state == "waiting":
+                    msg = font_big.render("Step on the force plates to begin", True, (255, 220, 100))
+                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 20))
+
+                elif trial_state == "calibrating":
+                    msg = font_big.render("Calibrating - stand still...", True, (255, 220, 100))
+                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 20))
+
+                elif trial_state == "ready":
+                    msg = font_big.render("Calibration complete!", True, (100, 255, 100))
+                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 60))
+                    msg2 = font_instructions.render("Press SPACE when you are ready to start", True, (220, 220, 220))
+                    screen.blit(msg2, (WIDTH // 2 - msg2.get_width() // 2, HEIGHT // 2 + 10))
+
             else:
+                # Task screens: running / done - ball and center line visible
                 pygame.draw.line(screen, CENTER_LINE_COLOR, (center_x, 0), (center_x, HEIGHT), 2)
                 pygame.draw.circle(screen, BALL_COLOR, (int(ball_x), ball_y), BALL_RADIUS)
                 pygame.draw.circle(screen, CENTER_DOT_COLOR, (int(ball_x), ball_y), CENTER_DOT_RADIUS)
 
-                if trial_state == "waiting":
-                    msg = font_big.render("Step on the force plates to begin", True, (255, 220, 100))
-                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
-                elif trial_state == "calibrating":
-                    msg = font_big.render("Calibrating - stand still...", True, (255, 220, 100))
-                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
-                elif trial_state == "ready":
-                    msg = font_big.render("Calibration complete!", True, (100, 255, 100))
-                    screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
-                    msg2 = font_instructions.render("Press SPACE when you are ready to start", True, (220, 220, 220))
-                    screen.blit(msg2, (WIDTH // 2 - msg2.get_width() // 2, HEIGHT // 2 - 40))
-                elif trial_state == "done":
+                if trial_state == "done":
                     msg = font_big.render("Trial Complete!", True, (100, 255, 100))
                     screen.blit(msg, (WIDTH // 2 - msg.get_width() // 2, HEIGHT // 2 - 100))
 
