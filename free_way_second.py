@@ -55,9 +55,9 @@ MIN_CROSSING_THRESHOLD_MM = 20.0
 
 EDGE_MARGIN_PX = 20
 
-# =====================================================================
+
 #  FORCE PLATE SETTINGS
-# =====================================================================
+
 QTM_IP = "127.0.0.1"
 QTM_PLATE_IDS = [3, 5]   # 3 = left foot plate, 5 = right foot plate
 
@@ -73,9 +73,9 @@ PLATE_OFFSET_MM = {
 # AXIS NOTE (confirmed July 2026 in QTM Project): raw y_a = true
 # mediolateral axis, raw x_a = true anteroposterior axis.
 
-# =====================================================================
+
 #  DISPLAY
-# =====================================================================
+
 FPS = 60
 BG_COLOR = (0, 0, 0)             # pure black background
 BALL_RADIUS = 50
