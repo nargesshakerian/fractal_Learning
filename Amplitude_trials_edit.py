@@ -37,37 +37,19 @@ TRIAL_DURATION_SEC = 300        # 5 minutes
 # that participant's preferred frequency (e.g. from the free-sway task).
 FIXED_FREQUENCY_HZ = 0.3
 
-# fGn (Davies-Harte) parameters for the amplitude sequence.
-# H changes between trials (this is the independent variable of interest).
-#
-# FGN_SD is now PERSON-SPECIFIC, taken from the free-sway task's summary
-# CSV ("amplitude_sd_mm (for FGN_SD)" row) - the standard deviation of
-# how far this person's CoP excursion varied across their 10 clean
-# cycles. Source file: free_sway_summary_20260812_150004.csv
-HURST = 0.5           # <-- change per trial condition
+
+HURST = 0.99           # <-- change per trial condition
 FGN_SD = 6.51          # <-- from free-sway summary: amplitude_sd_mm
 RNG_SEED = 19950711    # keep fixed for reproducibility across trials, or None for random
 
-# =====================================================================
-#  AMPLITUDE RANGE - derived from this person's free-sway task results
-# =====================================================================
-# BASE_AMP_MAX_MM: the mean per-cycle CoP excursion magnitude this person
-# actually reached during free-sway (their natural, comfortable maximum -
-# NOT a theoretical limit like half their stance width, since people
-# rarely sway all the way to the edge of their base of support).
-# Source: free_sway_summary CSV, "amplitude_max_mm (for BASE_AMP_MAX)".
-BASE_AMP_MAX_MM = 146.34
 
-# BASE_AMP_MIN_MM: the smallest amplitude the pathway will ever use.
-# Defined as BASE_AMP_MAX_MM minus 2 standard deviations of this
-# person's own cycle-to-cycle variability (amplitude_sd_mm) - i.e. a
-# range grounded in how much this specific person's natural sway
-# actually varies, rather than an arbitrary fixed number or a
-# comparison to stance width (a physically different quantity: stance
-# width is a fixed anatomical distance between the feet, while
-# amplitude_max is a behavioral CoP excursion - the two aren't directly
-# comparable, so BASE_AMP_MIN is derived from amplitude data alone).
-BASE_AMP_MIN_MM = BASE_AMP_MAX_MM - (2 * FGN_SD)   # = 146.34 - 2*6.51 = 133.32mm
+#  AMPLITUDE RANGE - derived from this person's free-sway task results
+
+BASE_AMP_MAX_MM = 142
+
+
+
+BASE_AMP_MIN_MM = BASE_AMP_MAX_MM - (10 * FGN_SD)  
 
 # Both get converted to px at runtime using the same mm-to-px ratio as
 # COP_RANGE_MM, so the pathway and the red ball's CoP-driven range
@@ -105,8 +87,8 @@ COP_RANGE_MM = 200.0
 FPS = 60
 BG_COLOR = (15, 15, 30)
 REF_W, REF_H = 600, 700
-BASE_BALL_RADIUS = 26            # reduced from 34 - smaller ball
-BASE_CENTER_DOT_RADIUS = 5       # small black center dot for precise alignment
+BASE_BALL_RADIUS = 40            # reduced from 34 - smaller ball
+BASE_CENTER_DOT_RADIUS = 10       # small black center dot for precise alignment
 BASE_AUTO_SPEED = 0.7           # vertical scroll speed in px per frame
 BASE_GRID_SPACING = 60
 BASE_FONT_SIZE = 14
