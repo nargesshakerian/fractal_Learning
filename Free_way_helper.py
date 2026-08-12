@@ -37,12 +37,21 @@ import glob
 import os
 import statistics
 
+# Maximum excursion (mm) considered physically plausible for a natural
+# weight shift within a normal stance. Values beyond this are almost
+# certainly numerical artifacts (e.g. from combined_cop_shared_mm's
+# force-weighted average becoming unstable when both feet's Fz drop
+# near zero at once), not real sway - so they're discarded rather than
+# allowed to distort the max/mean calculation.
+REASONABLE_MAX_EXCURSION_MM = 400.0
+
 
 def analyze_one_file(filepath):
     """Returns the trial's max excursion (mm), or None if the file has
     no usable data."""
     positive_vals = []
     negative_vals = []
+    discarded_count = 0
 
     with open(filepath, newline="") as f:
         reader = csv.DictReader(f)
@@ -59,10 +68,28 @@ def analyze_one_file(filepath):
                 val = float(raw)
             except ValueError:
                 continue
+
+            # Sanity filter: combined_cop_shared_mm is a force-weighted
+            # average and becomes numerically unstable (huge, physically
+            # impossible values) when BOTH feet's Fz drop toward zero at
+            # once - e.g. the person briefly stepping off the plates.
+            # No real weight-shift produces excursions anywhere near
+            # this large, so values outside this range are discarded as
+            # measurement artifacts rather than real sway.
+            if abs(val) > REASONABLE_MAX_EXCURSION_MM:
+                discarded_count += 1
+                continue
+
             if val > 0:
                 positive_vals.append(val)
             elif val < 0:
                 negative_vals.append(val)
+
+    if discarded_count > 0:
+        print(f"  NOTE: {os.path.basename(filepath)} - discarded {discarded_count} "
+              f"sample(s) exceeding +/-{REASONABLE_MAX_EXCURSION_MM:.0f}mm "
+              f"(likely unstable readings from very low Fz on both feet, "
+              f"e.g. briefly stepping off the plates).")
 
     if not positive_vals or not negative_vals:
         print(f"  WARNING: {os.path.basename(filepath)} has no clear "
