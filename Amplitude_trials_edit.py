@@ -460,9 +460,30 @@ def main():
     print(f"5 min distance: {total_distance:.0f}px -> generating {NUM_CYCLES} cycles")
     print(f"Amplitude source: fgn_sim (Davies-Harte), H={HURST}, sd={FGN_SD}, seed={RNG_SEED}")
 
-    # Build the amplitude pathway: one fGn value per cycle, normalized to [0,1]
-    raw_fgn = fgn_sim(NUM_CYCLES, HURST, sd=FGN_SD, seed=RNG_SEED)
-    amp_values = normalize_01(raw_fgn)
+    # Build the amplitude pathway directly from fgn_sim's raw output,
+    # centered on the midpoint of [AMP_MIN_PX, AMP_MAX_PX] with a
+    # spread controlled by FGN_SD (converted to px). This replaces an
+    # earlier version that min-max normalized the fGn series to [0,1] -
+    # that normalization stretched every run to use the full amplitude
+    # range regardless of H or FGN_SD, which erased both the fractal
+    # pattern (H) and the person-specific variability (FGN_SD) from the
+    # visible pathway. Values are clipped to [AMP_MIN_PX, AMP_MAX_PX]
+    # as a safety bound - by design (see project notes), the person's
+    # natural amplitude occasionally exceeding this range and being
+    # clipped is treated as a meaningful "reaching the edge of natural
+    # capacity" event, not a bug to eliminate.
+    fgn_sd_px = FGN_SD * mm_to_px_ratio
+    amp_mu_px = (AMP_MIN_PX + AMP_MAX_PX) / 2.0
+    raw_fgn_px = fgn_sim(NUM_CYCLES, HURST, sd=fgn_sd_px, mu=amp_mu_px, seed=RNG_SEED)
+    amp_values_px = np.clip(raw_fgn_px, AMP_MIN_PX, AMP_MAX_PX)
+    clipped_fraction = np.mean((raw_fgn_px < AMP_MIN_PX) | (raw_fgn_px > AMP_MAX_PX))
+    print(f"Amplitude pathway centered at {amp_mu_px:.1f}px, spread (sd)={fgn_sd_px:.1f}px")
+    print(f"  {clipped_fraction*100:.1f}% of cycles clipped to the [AMP_MIN_PX, AMP_MAX_PX] bound")
+
+    # amp_values is now used directly as a 0..1 fraction by
+    # CycleAmplitudeMap (amp_min + v*(amp_max-amp_min)), so convert the
+    # clipped px values back into that 0..1 fraction here
+    amp_values = (amp_values_px - AMP_MIN_PX) / (AMP_MAX_PX - AMP_MIN_PX)
     amp_map = CycleAmplitudeMap(FREQUENCY, amp_values, AMP_MIN_PX, AMP_MAX_PX)
 
     def get_path_center_x(world_y):
