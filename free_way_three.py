@@ -24,6 +24,7 @@ import csv
 import asyncio
 import time
 import threading
+import statistics
 from datetime import datetime
 
 import numpy as np
@@ -544,20 +545,46 @@ def main():
         print(f"  (these per-cycle peaks are also in the CSV via the "
               f"cycle_number column, for later analysis)")
 
+        # --- combine right/left into a single amplitude range for the
+        # amplitude-variable task (BASE_AMP_MAX and FGN_SD) ---
+        # Each cycle contributes ONE excursion magnitude: the average of
+        # that cycle's right and left peak magnitudes (symmetric view of
+        # how far the person swayed in that cycle). The MAXIMUM amplitude
+        # is then the mean of these per-cycle magnitudes across the 10
+        # clean cycles, and the SD is the standard deviation of the same
+        # per-cycle magnitudes - i.e. how much the person's natural
+        # excursion varied from cycle to cycle within this one run.
+        per_cycle_magnitude = [(abs(p[1]) + abs(p[2])) / 2.0 for p in clean_peaks]
+        amplitude_max_mm = statistics.mean(per_cycle_magnitude)
+        amplitude_sd_mm = statistics.stdev(per_cycle_magnitude) if len(per_cycle_magnitude) > 1 else 0.0
+
+        print(f"\n  Amplitude range for the amplitude-variable task:")
+        print(f"    BASE_AMP_MAX source (mean of per-cycle L/R average): {amplitude_max_mm:.1f}mm")
+        print(f"    FGN_SD source (std of per-cycle L/R average):        {amplitude_sd_mm:.1f}mm")
+
         # --- save a separate summary CSV (per-cycle peaks + final mean) ---
         summary_path = f"free_sway_summary_{ts}.csv"
         with open(summary_path, "w", newline="") as sf:
             summary_writer = csv.writer(sf)
-            summary_writer.writerow(["cycle_number", "peak_right_mm", "peak_left_mm", "excluded_from_mean"])
+            summary_writer.writerow([
+                "cycle_number", "peak_right_mm", "peak_left_mm",
+                "lr_magnitude_mm", "excluded_from_mean",
+            ])
             for cyc, peak_pos, peak_neg in cycle_peaks:
+                excluded = cyc in excluded_cycle_numbers
+                magnitude = (abs(peak_pos) + abs(peak_neg)) / 2.0
                 summary_writer.writerow([
                     cyc, round(peak_pos, 2), round(peak_neg, 2),
-                    "yes" if cyc in excluded_cycle_numbers else "no",
+                    round(magnitude, 2),
+                    "yes" if excluded else "no",
                 ])
             summary_writer.writerow([])
             summary_writer.writerow(["mean_peak_right_mm", round(mean_peak_pos, 2)])
             summary_writer.writerow(["mean_peak_left_mm", round(mean_peak_neg, 2)])
             summary_writer.writerow(["cycles_used_for_mean", len(clean_peaks)])
+            summary_writer.writerow([])
+            summary_writer.writerow(["amplitude_max_mm (for BASE_AMP_MAX)", round(amplitude_max_mm, 2)])
+            summary_writer.writerow(["amplitude_sd_mm (for FGN_SD)", round(amplitude_sd_mm, 2)])
         print(f"\n  Summary saved to {summary_path}")
     else:
         print("\nNo complete cycles were detected during this trial.")
