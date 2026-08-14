@@ -43,17 +43,29 @@ FIXED_FREQUENCY_HZ = 0.3
 
 
 HURST = 0.99           # <-- change per trial condition
-FGN_SD = 6.51          # <-- from free-sway summary: amplitude_sd_mm
+FGN_SD = 6.51          # <-- from free-sway summary: amplitude_sd_mm (used only
+                        #     as a diagnostic value now - NOT used to shape the
+                        #     pathway range itself, see note below)
 RNG_SEED = 19950711    # keep fixed for reproducibility across trials, or None for random
 
 
 #  AMPLITUDE RANGE - derived from this person's free-sway task results
-
+#
+# BASE_AMP_MAX_MM: the smaller of the person's mean peak right/left CoP
+# excursion from the free-sway task (min(|peak_right|, |peak_left|)) -
+# their real, demonstrated maximum comfortable sway.
 BASE_AMP_MAX_MM = 142
 
-
-
-BASE_AMP_MIN_MM = BASE_AMP_MAX_MM - (10 * FGN_SD)  
+# BASE_AMP_MIN_MM: simply half of BASE_AMP_MAX_MM. This is an arbitrary
+# but simple choice, NOT derived from FGN_SD - an earlier version tied
+# BASE_AMP_MIN_MM to FGN_SD (e.g. max - 2*sd or max - 10*sd), but since
+# fgn_sim's output is only ever fed through normalize_01 (which stretches
+# whatever range the raw signal spans to exactly fill
+# [BASE_AMP_MIN_MM, BASE_AMP_MAX_MM]), the absolute scale of FGN_SD
+# doesn't affect how much of the pathway range gets used - only the
+# fractal SHAPE (H) does. So FGN_SD is no longer part of this range
+# calculation.
+BASE_AMP_MIN_MM = BASE_AMP_MAX_MM / 2.0
 
 # Both get converted to px at runtime using the same mm-to-px ratio as
 # COP_RANGE_MM, so the pathway and the red ball's CoP-driven range
@@ -157,43 +169,58 @@ def fgn_sim(n, H, sd=1.0, mu=0.0, seed=None):
     return sd * z_complex + mu
 
 
-def save_pathway_debug_plot(n_cycles, amp_mu_px, fgn_sd_px, amp_min_px, amp_max_px,
-                             seed, out_path, h_values=(0.1, 0.3, 0.5, 0.7, 0.9)):
-    """Generates and saves a diagnostic plot comparing the raw fgn_sim
-    output (before clipping) against the clipped pathway (what the
-    task actually draws), for a range of H values, using the EXACT
-    same mu/sd/range/seed as this trial's real run. This lets you
-    directly check whether the fractal pattern for different H values
-    is visible in the raw signal, and how much of it survives the
-    clip to [amp_min_px, amp_max_px].
+def save_pathway_debug_plot(n_cycles, hurst, amp_min_px, amp_max_px, seed, out_path,
+                             points_per_cycle=100, preview_cycles=15):
+    """Generates and saves a diagnostic plot showing the ACTUAL sine
+    wave this trial will draw - amplitude driven by fgn_sim(H) with
+    THIS trial's real H, seed, and [amp_min_px, amp_max_px] range -
+    so you can directly verify, for every run, that H is really
+    shaping the amplitude of the pathway before the trial starts.
+
+    Shows only the first `preview_cycles` cycles (not the whole
+    trial) so the pattern is visible at a readable scale; the full
+    pathway uses the same logic for all n_cycles.
 
     This is a diagnostic aid, not part of the trial logic itself - it
     does not affect amp_values or the ball's actual motion."""
-    fig, axes = plt.subplots(len(h_values), 1, figsize=(12, 2.2 * len(h_values)), sharex=True, sharey=True)
-    if len(h_values) == 1:
-        axes = [axes]
+    raw = fgn_sim(n_cycles, hurst, sd=1.0, seed=seed)
+    normed = normalize_01(raw)
+    amp_values_px = amp_min_px + normed * (amp_max_px - amp_min_px)
 
-    for ax, h_val in zip(axes, h_values):
-        raw = fgn_sim(n_cycles, h_val, sd=fgn_sd_px, mu=amp_mu_px, seed=seed)
-        clipped = np.clip(raw, amp_min_px, amp_max_px)
-        clipped_pct = np.mean((raw < amp_min_px) | (raw > amp_max_px)) * 100
+    preview_n = min(preview_cycles, n_cycles)
+    t = np.linspace(0, preview_n, preview_n * points_per_cycle)
+    y = np.zeros_like(t)
+    for i, ti in enumerate(t):
+        idx = int(ti)
+        frac = ti - idx
+        idx0 = min(idx, preview_n - 1)
+        idx1 = min(idx + 1, preview_n - 1)
+        amp_now = amp_values_px[idx0] * (1 - frac) + amp_values_px[idx1] * frac
+        y[i] = amp_now * math.sin(2 * math.pi * ti)
 
-        ax.plot(raw, color="tab:blue", alpha=0.4, linewidth=1, label="raw (before clip)")
-        ax.plot(clipped, color="tab:orange", linewidth=1.5, label="clipped (actually used)")
-        ax.axhline(amp_min_px, color="red", linestyle="--", linewidth=0.8, alpha=0.6)
-        ax.axhline(amp_max_px, color="red", linestyle="--", linewidth=0.8, alpha=0.6)
-        ax.set_title(f"H={h_val}  (clipped: {clipped_pct:.0f}% of cycles)", fontsize=9)
-        ax.set_ylabel("Amplitude (px)", fontsize=8)
-        ax.legend(loc="upper right", fontsize=7)
-        ax.grid(True, alpha=0.3)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6))
 
-    axes[-1].set_xlabel("Cycle number")
-    fig.suptitle(
-        f"Amplitude pathway preview (this trial's actual parameters)\n"
-        f"mu={amp_mu_px:.0f}px, sd={fgn_sd_px:.1f}px, range=[{amp_min_px:.0f},{amp_max_px:.0f}]px, "
-        f"seed={seed}",
-        fontsize=10,
-    )
+    # top: the actual sine wave with H-driven amplitude
+    ax1.plot(t, y, linewidth=0.9, color="tab:blue")
+    ax1.axhline(0, color="gray", linewidth=0.5)
+    ax1.axhline(amp_max_px, color="green", linestyle="--", linewidth=0.8, alpha=0.5)
+    ax1.axhline(-amp_max_px, color="green", linestyle="--", linewidth=0.8, alpha=0.5)
+    ax1.set_title(f"H={hurst}: actual pathway sine wave (first {preview_n} of {n_cycles} cycles)")
+    ax1.set_ylabel("y (px)")
+    ax1.set_xlabel("Cycle number (time)")
+    ax1.grid(True, alpha=0.3)
+
+    # bottom: the per-cycle amplitude envelope alone, full trial length
+    ax2.plot(amp_values_px, color="tab:blue", linewidth=1.0, marker="o", markersize=1.5)
+    ax2.axhline(amp_min_px, color="red", linestyle="--", linewidth=0.8, alpha=0.6, label="AMP_MIN_PX")
+    ax2.axhline(amp_max_px, color="green", linestyle="--", linewidth=0.8, alpha=0.6, label="AMP_MAX_PX")
+    ax2.set_title(f"Full amplitude envelope for this trial ({n_cycles} cycles)")
+    ax2.set_ylabel("Amplitude (px)")
+    ax2.set_xlabel("Cycle number")
+    ax2.legend(loc="upper right", fontsize=8)
+    ax2.grid(True, alpha=0.3)
+
+    fig.suptitle(f"Pathway check - H={hurst}, range=[{amp_min_px:.0f},{amp_max_px:.0f}]px, seed={seed}")
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
@@ -488,37 +515,42 @@ def main():
     print(f"5 min distance: {total_distance:.0f}px -> generating {NUM_CYCLES} cycles")
     print(f"Amplitude source: fgn_sim (Davies-Harte), H={HURST}, sd={FGN_SD}, seed={RNG_SEED}")
 
-    # Build the amplitude pathway directly from fgn_sim's raw output,
-    # centered on the midpoint of [AMP_MIN_PX, AMP_MAX_PX] with a
-    # spread controlled by FGN_SD (converted to px). This replaces an
-    # earlier version that min-max normalized the fGn series to [0,1] -
-    # that normalization stretched every run to use the full amplitude
-    # range regardless of H or FGN_SD, which erased both the fractal
-    # pattern (H) and the person-specific variability (FGN_SD) from the
-    # visible pathway. Values are clipped to [AMP_MIN_PX, AMP_MAX_PX]
-    # as a safety bound - by design (see project notes), the person's
-    # natural amplitude occasionally exceeding this range and being
-    # clipped is treated as a meaningful "reaching the edge of natural
-    # capacity" event, not a bug to eliminate.
-    fgn_sd_px = FGN_SD * mm_to_px_ratio
-    amp_mu_px = (AMP_MIN_PX + AMP_MAX_PX) / 2.0
-    raw_fgn_px = fgn_sim(NUM_CYCLES, HURST, sd=fgn_sd_px, mu=amp_mu_px, seed=RNG_SEED)
-    amp_values_px = np.clip(raw_fgn_px, AMP_MIN_PX, AMP_MAX_PX)
-    clipped_fraction = np.mean((raw_fgn_px < AMP_MIN_PX) | (raw_fgn_px > AMP_MAX_PX))
-    print(f"Amplitude pathway centered at {amp_mu_px:.1f}px, spread (sd)={fgn_sd_px:.1f}px")
-    print(f"  {clipped_fraction*100:.1f}% of cycles clipped to the [AMP_MIN_PX, AMP_MAX_PX] bound")
+    # Build the amplitude pathway using normalize_01: fgn_sim's raw
+    # output (whatever range IT naturally spans, based on H) gets
+    # stretched so its own min maps to AMP_MIN_PX and its own max maps
+    # to AMP_MAX_PX. This guarantees the full [AMP_MIN_PX, AMP_MAX_PX]
+    # range is always used (both bounds actually get touched), while
+    # still preserving the fractal SHAPE that H produces (smooth,
+    # persistent excursions for high H vs. rough, rapidly-changing
+    # excursions for low H) - since normalize_01 only rescales the
+    # signal, it doesn't touch its shape.
+    #
+    # An earlier version used fgn_sim's own mu/sd directly (no
+    # normalization) with clipping as a safety bound - but that failed
+    # for a different reason: fgn_sim's output follows a roughly normal
+    # distribution around mu, so the vast majority of values cluster
+    # within about +/-3*sd of the center and rarely approach the
+    # min/max bounds at all - meaning AMP_MIN_PX was almost never
+    # actually reached, regardless of how it was defined.
+    raw_fgn = fgn_sim(NUM_CYCLES, HURST, sd=1.0, seed=RNG_SEED)
+    amp_values = normalize_01(raw_fgn)   # 0..1 fraction, min=0 max=1 always touched
+    amp_values_px = AMP_MIN_PX + amp_values * (AMP_MAX_PX - AMP_MIN_PX)
+    print(f"Amplitude pathway spans the full [AMP_MIN_PX, AMP_MAX_PX] = "
+          f"[{AMP_MIN_PX}, {AMP_MAX_PX}]px range (via normalize_01)")
 
-    # Diagnostic plot: compares raw vs. clipped pathway signal across a
-    # range of H values, using this run's ACTUAL mu/sd/range/seed - so
-    # you can directly check whether the fractal pattern for different
-    # H is visible before clipping, and how much survives after. Saved
-    # once per run, before the trial starts; does not affect gameplay.
+    # Diagnostic plot: shows the amp_values_px pattern for a range of H
+    # values side by side, using this run's ACTUAL min/max/seed - so
+    # Diagnostic plot: shows the ACTUAL sine wave this trial will draw
+    # (amplitude driven by fgn_sim with THIS trial's real HURST value),
+    # so you can directly verify H is shaping the pathway before every
+    # run. Saved once per run, before the trial starts; does not
+    # affect gameplay - uses the exact same RNG_SEED, so it reflects
+    # this run's real amp_values.
     debug_plot_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    debug_plot_path = f"pathway_debug_{debug_plot_ts}.png"
+    debug_plot_path = f"pathway_debug_H{HURST}_{debug_plot_ts}.png"
     save_pathway_debug_plot(
         n_cycles=NUM_CYCLES,
-        amp_mu_px=amp_mu_px,
-        fgn_sd_px=fgn_sd_px,
+        hurst=HURST,
         amp_min_px=AMP_MIN_PX,
         amp_max_px=AMP_MAX_PX,
         seed=RNG_SEED,
@@ -526,10 +558,6 @@ def main():
     )
     print(f"  Pathway debug plot saved to {debug_plot_path}")
 
-    # amp_values is now used directly as a 0..1 fraction by
-    # CycleAmplitudeMap (amp_min + v*(amp_max-amp_min)), so convert the
-    # clipped px values back into that 0..1 fraction here
-    amp_values = (amp_values_px - AMP_MIN_PX) / (AMP_MAX_PX - AMP_MIN_PX)
     amp_map = CycleAmplitudeMap(FREQUENCY, amp_values, AMP_MIN_PX, AMP_MAX_PX)
 
     def get_path_center_x(world_y):
