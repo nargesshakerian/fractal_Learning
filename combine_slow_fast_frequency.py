@@ -28,6 +28,14 @@ import csv
 import os
 import statistics
 
+# =====================================================================
+#  EDIT THESE if you'd rather not type filenames on the command line.
+#  Leave them as "" (empty) to use command-line arguments instead -
+#  see main() below for exactly how the choice is made.
+# =====================================================================
+SLOW_SUMMARY_PATH = ""   # e.g. r"C:\Users\BMCH\Documents\game_code\game\preferred_freq_slow_summary_20260816_140000.csv"
+FAST_SUMMARY_PATH = ""   # e.g. r"C:\Users\BMCH\Documents\game_code\game\preferred_freq_fast_summary_20260816_141000.csv"
+
 
 def read_valid_frequencies(filepath):
     """Returns a list of frequency_hz values from rows NOT marked
@@ -55,15 +63,27 @@ def read_valid_frequencies(filepath):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python combine_slow_fast_frequency.py slow_summary.csv fast_summary.csv")
+    # Priority: filenames edited into the script (SLOW_SUMMARY_PATH /
+    # FAST_SUMMARY_PATH above) are used if both are set; otherwise,
+    # fall back to command-line arguments.
+    if SLOW_SUMMARY_PATH and FAST_SUMMARY_PATH:
+        slow_path, fast_path = SLOW_SUMMARY_PATH, FAST_SUMMARY_PATH
+        print("Using filenames set at the top of this script.\n")
+    elif len(sys.argv) >= 3:
+        slow_path, fast_path = sys.argv[1], sys.argv[2]
+    else:
+        print("No filenames given. Either:")
+        print("  1. Edit SLOW_SUMMARY_PATH and FAST_SUMMARY_PATH near the top of this")
+        print("     script and re-run with no arguments, or")
+        print("  2. Run from the command line with two paths:")
+        print("     python combine_slow_fast_frequency.py slow_summary.csv fast_summary.csv")
         sys.exit(1)
-
-    slow_path, fast_path = sys.argv[1], sys.argv[2]
 
     for p in (slow_path, fast_path):
         if not os.path.isfile(p):
-            print(f"File not found: {p}")
+            print(f"File not found: {p!r}")
+            print("Check the path is correct - if it contains spaces, wrap it in quotes")
+            print("on the command line, or double-check it if set at the top of this script.")
             sys.exit(1)
 
     slow_freqs = read_valid_frequencies(slow_path)
