@@ -49,10 +49,11 @@ def read_valid_frequencies(filepath):
             return freqs
 
         for row in reader:
-            raw_freq = row.get("frequency_hz", "")
-            if raw_freq == "":
+            raw_freq = row.get("frequency_hz")
+            if raw_freq is None or raw_freq == "":
                 continue
-            excluded = row.get("excluded_from_mean", "no").strip().lower()
+            excluded = row.get("excluded_from_mean")
+            excluded = (excluded or "no").strip().lower()
             if excluded == "yes":
                 continue
             try:
