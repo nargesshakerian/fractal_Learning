@@ -13,7 +13,10 @@ What this trial does:
   - Fixed amplitude (person-specific; from the free-sway task's
     lr_magnitude, same source as the amplitude trial's BASE_AMP_MAX_MM)
   - Frequency changes once per cycle, drawn from fgn_sim(H) via
-    normalize_01 into [FREQ_MIN_HZ, FREQ_MAX_HZ]
+    normalize_01 into an [FREQ_MIN_HZ, FREQ_MAX_HZ] range) - instead,
+    the per-cycle frequency is drawn directly from fgn_sim(H,
+    sd=FREQ_SD_HZ, mu=FREQ_MEAN_HZ), using this person's real measured
+    mean and SD from the preferred-frequency task
   - Since frequency sits INSIDE sin(phase) rather than multiplying it
     (unlike amplitude), changing it abruptly cycle-to-cycle would
     create a visible jump/discontinuity in the path. This trial
@@ -62,21 +65,15 @@ RNG_SEED = None          # each trial gets a fully independent random
                           # dominated the visible shape more than H's
                           # own effect. seed=None avoids that here too.
 
-#  FREQUENCY RANGE - derived from this person's preferred-frequency
-#  task results (preferred_freq_summary CSV)
-#
-# FREQ_MAX_HZ: this person's mean cycle frequency from the preferred-
-# frequency task (mean_frequency_hz).
-FREQ_MAX_HZ = 0.5061
-
-# FREQ_MIN_HZ: simply half of FREQ_MAX_HZ - same arbitrary-but-simple
-# choice as BASE_AMP_MIN_MM in the amplitude trial (max/2), not derived
-# from the measured SD, since fgn_sim's output is only ever fed through
-# normalize_01 (which stretches whatever range the raw signal spans to
-# exactly fill [FREQ_MIN_HZ, FREQ_MAX_HZ]) - so the absolute scale of
-# the SD doesn't affect how much of the range gets used, only H's
-# fractal SHAPE does.
-FREQ_MIN_HZ = FREQ_MAX_HZ / 2.0
+#  FREQUENCY DISTRIBUTION - derived directly from this person's
+#  preferred-frequency task results (preferred_freq_summary CSV),
+#  fed straight into fgn_sim's own mu/sd (NOT via normalize_01 into an
+#  arbitrary [min,max] range, unlike the amplitude trial) - so the
+#  per-cycle frequency sequence is centered on this person's real mean
+#  pace with a spread matching their real measured cycle-to-cycle
+#  variability.
+FREQ_MEAN_HZ = 0.5873   # from combine_slow_fast_frequency.py: Combined mean frequency
+FREQ_SD_HZ = 0.2004     # from combine_slow_fast_frequency.py: Combined SD of frequency
 
 
 # =====================================================================
@@ -182,43 +179,53 @@ def normalize_01(values):
     return (values - mn) / r
 
 
-def save_frequency_debug_plot(n_cycles, hurst, freq_min_hz, freq_max_hz, seed, out_path,
-                               preview_cycles=15):
+def save_frequency_debug_plot(n_cycles, hurst, freq_mean_hz, freq_sd_hz, auto_speed, fps,
+                               seed, out_path, points_per_cycle=60):
     """Generates and saves a diagnostic plot showing this trial's
-    actual per-cycle frequency sequence (via normalize_01 into
-    [freq_min_hz, freq_max_hz]), using THIS trial's real H and seed -
-    so you can directly verify H is shaping the frequency pattern
-    before every run. Companion to the amplitude trial's
-    save_pathway_debug_plot, but for frequency instead of amplitude.
+    ACTUAL sine wave - amplitude fixed at 1.0 (shape only), phase
+    accumulated via CyclePhaseMap exactly like the real trial does -
+    across ALL n_cycles, using THIS trial's real H, mean, sd, and
+    seed. This directly shows whether H's fractal pattern (smooth,
+    persistent stretches for high H vs. rough, rapidly-changing ones
+    for low H) is visible in the frequency-driven pathway itself, not
+    just in the per-cycle frequency numbers.
 
     This is a diagnostic aid, not part of the trial logic itself - it
     does not affect freq_values or the ball's actual motion."""
-    raw = fgn_sim(n_cycles, hurst, sd=1.0, seed=seed)
-    normed = normalize_01(raw)
-    freq_values_hz = freq_min_hz + normed * (freq_max_hz - freq_min_hz)
+    freq_values_hz = fgn_sim(n_cycles, hurst, sd=freq_sd_hz, mu=freq_mean_hz, seed=seed)
+    freq_values_hz = np.clip(freq_values_hz, 0.05, None)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6))
+    phase_map = CyclePhaseMap(freq_values_hz, auto_speed, fps)
+    total_world_y = phase_map.boundary_world_y[-1]
 
-    preview_n = min(preview_cycles, n_cycles)
-    ax1.plot(range(preview_n), freq_values_hz[:preview_n], marker="o", markersize=4, linewidth=1.2, color="tab:blue")
-    ax1.axhline(freq_min_hz, color="red", linestyle="--", linewidth=0.8, alpha=0.6, label="FREQ_MIN_HZ")
-    ax1.axhline(freq_max_hz, color="green", linestyle="--", linewidth=0.8, alpha=0.6, label="FREQ_MAX_HZ")
-    ax1.set_title(f"H={hurst}: per-cycle frequency (first {preview_n} of {n_cycles} cycles)")
-    ax1.set_ylabel("Frequency (Hz)")
-    ax1.set_xlabel("Cycle number")
-    ax1.legend(loc="upper right", fontsize=8)
+    world_ys = np.linspace(0, total_world_y, n_cycles * points_per_cycle)
+    y = np.array([math.sin(phase_map.get_phase(wy)) for wy in world_ys])
+    times_sec = world_ys / phase_map.px_per_sec
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7))
+
+    # top: the actual sine wave shape (amplitude=1, shows frequency
+    # pattern only) across the ENTIRE trial's cycles
+    ax1.plot(times_sec, y, linewidth=0.6, color="tab:blue")
+    ax1.axhline(0, color="gray", linewidth=0.5)
+    ax1.set_title(f"H={hurst}: actual pathway sine wave, all {n_cycles} cycles "
+                  f"(amplitude normalized to 1 - shows frequency pattern only)")
+    ax1.set_ylabel("sin(phase)")
+    ax1.set_xlabel("Time (s)")
     ax1.grid(True, alpha=0.3)
 
+    # bottom: the per-cycle frequency envelope, for direct numeric reference
     ax2.plot(freq_values_hz, color="tab:blue", linewidth=1.0, marker="o", markersize=1.5)
-    ax2.axhline(freq_min_hz, color="red", linestyle="--", linewidth=0.8, alpha=0.6, label="FREQ_MIN_HZ")
-    ax2.axhline(freq_max_hz, color="green", linestyle="--", linewidth=0.8, alpha=0.6, label="FREQ_MAX_HZ")
+    ax2.axhline(freq_mean_hz, color="gray", linestyle=":", linewidth=0.8, alpha=0.6, label="mean")
+    ax2.axhline(freq_mean_hz + freq_sd_hz, color="green", linestyle="--", linewidth=0.8, alpha=0.5, label="mean +/- sd")
+    ax2.axhline(freq_mean_hz - freq_sd_hz, color="green", linestyle="--", linewidth=0.8, alpha=0.5)
     ax2.set_title(f"Full frequency envelope for this trial ({n_cycles} cycles)")
     ax2.set_ylabel("Frequency (Hz)")
     ax2.set_xlabel("Cycle number")
     ax2.legend(loc="upper right", fontsize=8)
     ax2.grid(True, alpha=0.3)
 
-    fig.suptitle(f"Frequency check - H={hurst}, range=[{freq_min_hz:.3f},{freq_max_hz:.3f}]Hz, seed={seed}")
+    fig.suptitle(f"Frequency check - H={hurst}, mean={freq_mean_hz:.4f}Hz, sd={freq_sd_hz:.4f}Hz, seed={seed}")
     fig.tight_layout()
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
@@ -554,30 +561,44 @@ def main():
     AMP_PX = int(FIXED_AMPLITUDE_MM * mm_to_px_ratio)
 
     total_distance = AUTO_SPEED * FPS * TRIAL_DURATION_SEC
-    # generous upper bound on cycles needed: use the SLOWEST possible
-    # frequency in range (FREQ_MIN_HZ) to make sure we never run out of
-    # precomputed cycles before the trial duration ends
-    slowest_cycle_px = (1.0 / FREQ_MIN_HZ) * AUTO_SPEED * FPS
+    # Generous upper bound on cycles needed: fgn_sim's output is drawn
+    # from roughly a normal distribution around FREQ_MEAN_HZ, so use
+    # mean - 4*sd as a conservative "slowest realistic frequency" for
+    # sizing NUM_CYCLES (with a hard floor so this never goes to zero
+    # or negative even if sd is unexpectedly large relative to mean).
+    safety_min_freq_hz = max(FREQ_MEAN_HZ - 4 * FREQ_SD_HZ, 0.05)
+    slowest_cycle_px = (1.0 / safety_min_freq_hz) * AUTO_SPEED * FPS
     cycles_needed = int(math.ceil(total_distance / slowest_cycle_px)) + 5
     NUM_CYCLES = max(100, cycles_needed)
 
     print(f"Screen: {WIDTH}x{HEIGHT}, Scale: {scale:.2f}")
     print(f"Ball: {BALL_RADIUS}px at y={BALL_Y}px, Fixed amplitude: {AMP_PX}px ({FIXED_AMPLITUDE_MM}mm)")
-    print(f"Frequency range: [{FREQ_MIN_HZ:.4f}, {FREQ_MAX_HZ:.4f}]Hz")
+    print(f"Frequency: mean={FREQ_MEAN_HZ:.4f}Hz, sd={FREQ_SD_HZ:.4f}Hz")
     print(f"5 min distance: {total_distance:.0f}px -> generating {NUM_CYCLES} cycles (upper bound)")
     print(f"Frequency source: fgn_sim (Davies-Harte), H={HURST}, seed={RNG_SEED}")
 
-    # Build the per-cycle frequency sequence using normalize_01 - same
-    # approach as the amplitude trial's amp_values, but for frequency:
-    # fgn_sim's raw output (whatever range IT naturally spans, based on
-    # H) gets stretched so its own min maps to FREQ_MIN_HZ and its own
-    # max maps to FREQ_MAX_HZ, guaranteeing the full range is used while
-    # preserving H's fractal shape.
-    raw_fgn = fgn_sim(NUM_CYCLES, HURST, sd=1.0, seed=RNG_SEED)
-    freq_values = normalize_01(raw_fgn)
-    freq_values_hz = FREQ_MIN_HZ + freq_values * (FREQ_MAX_HZ - FREQ_MIN_HZ)
-    print(f"Frequency pathway spans the full [FREQ_MIN_HZ, FREQ_MAX_HZ] = "
-          f"[{FREQ_MIN_HZ:.4f}, {FREQ_MAX_HZ:.4f}]Hz range (via normalize_01)")
+    # Build the per-cycle frequency sequence DIRECTLY from fgn_sim's
+    # own mu/sd (per your request) - centered on this person's real
+    # mean pace (FREQ_MEAN_HZ) with a spread matching their real
+    # measured cycle-to-cycle variability (FREQ_SD_HZ). Unlike the
+    # amplitude trial, this is NOT passed through normalize_01, so the
+    # realized min/max will vary somewhat per run rather than exactly
+    # touching a fixed bound - but mu/sd match the measured values
+    # exactly, as requested.
+    freq_values_hz = fgn_sim(NUM_CYCLES, HURST, sd=FREQ_SD_HZ, mu=FREQ_MEAN_HZ, seed=RNG_SEED)
+
+    # Safety floor: fgn_sim can occasionally produce a value at or
+    # below zero (a physically impossible/undefined frequency) if a
+    # sample falls far enough below the mean - clip to a small positive
+    # floor so 1/freq never divides by zero or goes negative.
+    freq_values_hz = np.clip(freq_values_hz, 0.05, None)
+    n_clipped = np.sum(freq_values_hz <= 0.05)
+    if n_clipped > 0:
+        print(f"  NOTE: {n_clipped} cycle(s) had a non-positive raw frequency and were "
+              f"floored to 0.05Hz (safety bound, not expected to occur often given mean>>sd).")
+
+    print(f"Frequency pathway realized range: [{freq_values_hz.min():.4f}, {freq_values_hz.max():.4f}]Hz "
+          f"(target mean={FREQ_MEAN_HZ:.4f}Hz, sd={FREQ_SD_HZ:.4f}Hz)")
 
     # Diagnostic plot: shows THIS trial's actual per-cycle frequency
     # sequence, so you can directly verify H is shaping it before every
@@ -588,8 +609,10 @@ def main():
     save_frequency_debug_plot(
         n_cycles=NUM_CYCLES,
         hurst=HURST,
-        freq_min_hz=FREQ_MIN_HZ,
-        freq_max_hz=FREQ_MAX_HZ,
+        freq_mean_hz=FREQ_MEAN_HZ,
+        freq_sd_hz=FREQ_SD_HZ,
+        auto_speed=AUTO_SPEED,
+        fps=FPS,
         seed=RNG_SEED,
         out_path=debug_plot_path,
     )
